@@ -19,16 +19,17 @@ public class Demo03 {
             @Override
             public Integer call() throws Exception {
                 log.debug("running...");
-                Thread.sleep(1000);
+                Thread.sleep(4000);
                 return 100;
             }
         });
 
         Thread doTask = new Thread(task, "doTask");
         doTask.start();
-
+        Thread.sleep(5000);
         // 获取线程执行结果
-        log.debug("{}", task.get());
+        log.debug("开始获取线程结果...");   // 根据时间安排：如果是异步的话，两次打印是连续的，几乎没有间隔时间
+        log.debug("{}", task.get());    // 同步等待获取结果，如果已有结果立刻返回
     }
 
 }
