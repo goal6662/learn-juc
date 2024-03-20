@@ -10,6 +10,7 @@
     <packaging>pom</packaging>
     <modules>
         <module>juc-01-basic</module>
+        <module>juc-02-share</module>
     </modules>
 
     <properties>
