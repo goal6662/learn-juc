@@ -12,6 +12,7 @@
         <module>juc-01-basic</module>
         <module>juc-02-share</module>
         <module>juc-00-design</module>
+        <module>juc-03-jmm</module>
     </modules>
 
     <properties>
