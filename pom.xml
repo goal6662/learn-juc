@@ -14,6 +14,7 @@
         <module>juc-00-design</module>
         <module>juc-03-jmm</module>
         <module>juc-04-unlock</module>
+        <module>juc-05-immutable</module>
     </modules>
 
     <properties>
