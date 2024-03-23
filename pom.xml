@@ -13,6 +13,7 @@
         <module>juc-02-share</module>
         <module>juc-00-design</module>
         <module>juc-03-jmm</module>
+        <module>juc-04-unlock</module>
     </modules>
 
     <properties>
