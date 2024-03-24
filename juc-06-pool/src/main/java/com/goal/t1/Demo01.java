@@ -16,19 +16,23 @@ import java.util.concurrent.locks.ReentrantLock;
 public class Demo01 {
 
     public static void main(String[] args) throws InterruptedException {
-        ThreadPool threadPool = new ThreadPool(2, 1000, TimeUnit.MILLISECONDS, 5);
+        ThreadPool threadPool = new ThreadPool(4, 1000, TimeUnit.MILLISECONDS, 5);
 
-        for (int i = 0; i < 5; i++) {
+        for (int i = 0; i < 10; i++) {
             int j = i;
+            // 当前任务执行不完，主线程会阻塞，这样不好
             threadPool.execute(() -> {
+                try {
+                    TimeUnit.SECONDS.sleep(2);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
                 log.debug("{}", j);
             });
         }
 
         TimeUnit.SECONDS.sleep(1);
-        threadPool.execute(() -> {
-            log.debug("线程被移除了吗？");
-        });
+        threadPool.execute(() -> log.debug("线程被移除了吗？"));
     }
 
 }
@@ -39,7 +43,7 @@ class ThreadPool {
 
     // 任务列表
     // 每一个任务都是一个可执行线程方法
-    private BlockingQueue<Runnable> taskQueue;
+    private final BlockingQueue<Runnable> taskQueue;
 
     // 线程集合
     private final HashSet<Worker> workers = new HashSet<>();
@@ -47,24 +51,23 @@ class ThreadPool {
     /**
      * 线程数目
      */
-    private int coreSize;
+    private final int coreSize;
 
     /**
      * 获取任务的时间
      */
-    private long timeout;
+    private final long timeout;
 
     /**
      * 获取任务的时间单位
      */
-    private TimeUnit timeUnit;
+    private final TimeUnit timeUnit;
 
     public void execute(Runnable task) {
         // workers.size() 是读、workers.add(worker) 是写，需要保证其线程安全
         synchronized (workers) {
             if (workers.size() >= coreSize) {
                 // 加入阻塞队列
-                log.debug("线程池已满，任务{}进入阻塞队列", task);
                 taskQueue.put(task);
             } else {
                 // 任务数目没有超过 coreSize 时，直接交给 worker 执行
@@ -139,19 +142,19 @@ class BlockingQueue<T> {
 
     // 任务列表
     // ArrayDeque 性能较好
-    private Deque<T> deque = new ArrayDeque<>();
+    private final Deque<T> deque = new ArrayDeque<>();
 
     // 锁
-    private ReentrantLock lock = new ReentrantLock();
+    private final ReentrantLock lock = new ReentrantLock();
 
     // 生产者条件变量
-    private Condition fullWaitSet = lock.newCondition();
+    private final Condition fullWaitSet = lock.newCondition();
 
     // 消费者条件变量
-    private Condition emptyWaitSet = lock.newCondition();
+    private final Condition emptyWaitSet = lock.newCondition();
 
     // 容量
-    private int capacity;
+    private final int capacity;
 
     public BlockingQueue(int capacity) {
         this.capacity = capacity;
@@ -220,6 +223,7 @@ class BlockingQueue<T> {
             // 判断容量是否达到上限
             while (this.size() >= capacity) {
                 try {
+                    log.debug("等待进入阻塞队列 {}", element);
                     fullWaitSet.await();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
@@ -227,6 +231,7 @@ class BlockingQueue<T> {
             }
             // 添加任务到任务列表
             deque.addLast(element);
+            log.debug("进入阻塞队列 {}", element);
             // 唤醒消费者、添加一个唤醒一个
             emptyWaitSet.signal();
         } finally {
