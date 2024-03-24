@@ -1,0 +1,105 @@
+package com.goal.t1;
+
+import lombok.extern.slf4j.Slf4j;
+
+import java.util.AbstractList;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ * 线程池的基本使用
+ */
+@Slf4j(topic = "pool")
+public class Demo01 {
+
+    public static void main(String[] args) {
+
+    }
+
+}
+
+/**
+ * 阻塞队列
+ * 线程池从该队列获取任务进行执行
+ */
+class BlockingQueue<T> {
+
+    // 任务列表
+    // ArrayDeque 性能较好
+    private Deque<T> deque = new ArrayDeque<>();
+
+    // 锁
+    private ReentrantLock lock = new ReentrantLock();
+
+    // 生产者条件变量
+    private Condition fullWaitSet = lock.newCondition();
+
+    // 消费者条件变量
+    private Condition emptyWaitSet = lock.newCondition();
+
+    // 容量
+    private int capacity;
+
+    // 阻塞获取任务进行执行
+    public T take() {
+        // 任务列表是一个共享变量
+        lock.lock();
+
+        try {
+            // 当前没有任务需要执行，进入阻塞队列
+            while (deque.isEmpty()) {
+                try {
+                    emptyWaitSet.await();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            // 获取并删除第一个任务
+            T element = deque.removeFirst();
+            // 唤醒生产者
+            fullWaitSet.signal();
+            return element;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    // 阻塞添加
+    public void put(T element) {
+        // 加锁，否则可能有多个线程同时添加元素
+        lock.lock();
+
+        try {
+            // 判断容量是否达到上限
+            while (this.size() >= capacity) {
+                try {
+                    fullWaitSet.await();
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            // 添加任务到任务列表
+            deque.addLast(element);
+            // 唤醒消费者、添加一个唤醒一个
+            emptyWaitSet.signal();
+        } finally {
+            lock.unlock();
+        }
+
+    }
+
+    // 获取队列大小
+    public int size() {
+        lock.lock();
+
+        try {
+            return deque.size();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+}
