@@ -1,9 +1,10 @@
 package com.goal.t1;
 
-import javafx.concurrent.Worker;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -14,13 +15,26 @@ import java.util.concurrent.locks.ReentrantLock;
 @Slf4j(topic = "pool")
 public class Demo01 {
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws InterruptedException {
+        ThreadPool threadPool = new ThreadPool(2, 1000, TimeUnit.MILLISECONDS, 5);
 
+        for (int i = 0; i < 5; i++) {
+            int j = i;
+            threadPool.execute(() -> {
+                log.debug("{}", j);
+            });
+        }
+
+        TimeUnit.SECONDS.sleep(1);
+        threadPool.execute(() -> {
+            log.debug("线程被移除了吗？");
+        });
     }
 
 }
 
 
+@Slf4j(topic = "ThreadPool")
 class ThreadPool {
 
     // 任务列表
@@ -50,10 +64,12 @@ class ThreadPool {
         synchronized (workers) {
             if (workers.size() >= coreSize) {
                 // 加入阻塞队列
+                log.debug("线程池已满，任务{}进入阻塞队列", task);
                 taskQueue.put(task);
             } else {
                 // 任务数目没有超过 coreSize 时，直接交给 worker 执行
                 Worker worker = new Worker(task);
+                log.debug("创建新的线程：{}", worker);
                 // 添加至工人列表
                 workers.add(worker);
                 worker.start();
@@ -80,7 +96,7 @@ class ThreadPool {
     }
 
     // 线程工人
-    class Worker extends Thread {
+    private class Worker extends Thread {
         private Runnable task;
 
         public Worker(Runnable task) {
@@ -92,18 +108,20 @@ class ThreadPool {
             // 执行任务
             // 1. task 不为空，执行任务
             // 2. task 为空，从任务队列获取任务
-            while (task != null || (task = taskQueue.take()) != null) {
+//            while (task != null || (task = taskQueue.take()) != null) {
+            while (task != null || (task = taskQueue.poll(timeout, timeUnit)) != null) {
                 try {
+                    log.debug("开始执行任务, {}  {}", this, task);
                     task.run();
                 } catch (Exception e) {
-                    System.out.println("任务执行异常" + task);
-                    e.printStackTrace();
+                    log.error("任务 {} 执行异常 {}", task, e.getMessage());
                 } finally {
                     task = null;
                 }
             }
             // 3. 没有任务需要执行
             synchronized (workers) {
+                log.debug("没有可执行任务，线程被释放{}", this);
                 workers.remove(this);
             }
         }
@@ -116,6 +134,7 @@ class ThreadPool {
  * 阻塞队列
  * 线程池从该队列获取任务进行执行
  */
+@Slf4j(topic = "BlockingQueue")
 class BlockingQueue<T> {
 
     // 任务列表
