@@ -6,6 +6,7 @@ import java.util.AbstractList;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -42,6 +43,36 @@ class BlockingQueue<T> {
 
     // 容量
     private int capacity;
+
+    // 带超时的阻塞获取
+    public T poll(long timeout, TimeUnit unit) {
+        // 任务列表是一个共享变量
+        lock.lock();
+        try {
+            // 将时间转为纳秒
+            long nanos = unit.toNanos(timeout);
+            // 当前没有任务需要执行，进入阻塞队列
+            while (deque.isEmpty()) {
+                try {
+                    if (nanos <= 0) {
+                        return null;
+                    }
+                    // 剩余的等待时间
+                    nanos = emptyWaitSet.awaitNanos(nanos);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            // 获取并删除第一个任务
+            T element = deque.removeFirst();
+            // 唤醒生产者
+            fullWaitSet.signal();
+            return element;
+        } finally {
+            lock.unlock();
+        }
+    }
+
 
     // 阻塞获取任务进行执行
     public T take() {
