@@ -16,7 +16,19 @@ import java.util.concurrent.locks.ReentrantLock;
 public class Demo01 {
 
     public static void main(String[] args) throws InterruptedException {
-        ThreadPool threadPool = new ThreadPool(4, 1000, TimeUnit.MILLISECONDS, 5);
+        ThreadPool threadPool = new ThreadPool(2, 1000,
+                TimeUnit.MILLISECONDS, 5, ((queue, task) -> {
+                    // 死等
+//                    queue.put(task);
+                    // 超时等待
+//                    queue.offer(task, 1, TimeUnit.SECONDS);
+                    // 放弃执行
+//                    log.debug("阻塞队列已满，放弃执行：{}", task);
+                    // 调用者执行
+//                    task.run();
+                    // 抛出异常
+                    throw new RuntimeException("任务执行失败, 停止执行后续任务" + task);
+        }));
 
         for (int i = 0; i < 10; i++) {
             int j = i;
@@ -30,10 +42,19 @@ public class Demo01 {
                 log.debug("{}", j);
             });
         }
-
-        TimeUnit.SECONDS.sleep(1);
-        threadPool.execute(() -> log.debug("线程被移除了吗？"));
     }
+
+}
+
+@FunctionalInterface
+interface RejectStrategy<T> {
+
+    /**
+     * 队列已满时的处理逻辑
+     * @param queue 任务队列
+     * @param task 任务
+     */
+    void reject(BlockingQueue<T> queue, T task);
 
 }
 
@@ -63,12 +84,21 @@ class ThreadPool {
      */
     private final TimeUnit timeUnit;
 
+    /**
+     * 队列已满时的处理
+     */
+    private final RejectStrategy<Runnable> rejectStrategy;
+
     public void execute(Runnable task) {
         // workers.size() 是读、workers.add(worker) 是写，需要保证其线程安全
         synchronized (workers) {
             if (workers.size() >= coreSize) {
                 // 加入阻塞队列
-                taskQueue.put(task);
+//                taskQueue.put(task);
+
+                // 交给调用者处理
+                taskQueue.tryPut(rejectStrategy, task);
+
             } else {
                 // 任务数目没有超过 coreSize 时，直接交给 worker 执行
                 Worker worker = new Worker(task);
@@ -88,12 +118,13 @@ class ThreadPool {
      * @param timeUnit 时间单位
      * @param queueCapacity 任务列表容量
      */
-    public ThreadPool(int coreSize, long timeout, TimeUnit timeUnit, int queueCapacity) {
+    public ThreadPool(int coreSize, long timeout, TimeUnit timeUnit, int queueCapacity, RejectStrategy<Runnable> rejectStrategy) {
         this.coreSize = coreSize;
         this.timeout = timeout;
         this.timeUnit = timeUnit;
         // 初始化任务列表
         this.taskQueue = new BlockingQueue<>(queueCapacity);
+        this.rejectStrategy = rejectStrategy;
 //        // 初始化线程
 //        this.workers = new HashSet<>(coreSize);
     }
@@ -240,6 +271,36 @@ class BlockingQueue<T> {
 
     }
 
+
+    public void offer(T element, long timeout, TimeUnit timeUnit) {
+        // 加锁，否则可能有多个线程同时添加元素
+        lock.lock();
+        try {
+            long nanos = timeUnit.toNanos(timeout);
+            // 判断容量是否达到上限
+            while (this.size() >= capacity) {
+                try {
+                    if (nanos <= 0) {
+                        log.warn("任务超时未响应执行失败：{}", element);
+                        return;
+                    }
+                    log.debug("等待进入阻塞队列 {}", element);
+                    nanos = fullWaitSet.awaitNanos(nanos);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            // 添加任务到任务列表
+            deque.addLast(element);
+            log.debug("进入阻塞队列 {}", element);
+            // 唤醒消费者、添加一个唤醒一个
+            emptyWaitSet.signal();
+        } finally {
+            lock.unlock();
+        }
+
+    }
+
     // 获取队列大小
     public int size() {
         lock.lock();
@@ -251,4 +312,22 @@ class BlockingQueue<T> {
         }
     }
 
+    public void tryPut(RejectStrategy<T> rejectStrategy, T element) {
+        // 加锁，否则可能有多个线程同时添加元素
+        lock.lock();
+        try {
+            // 判断容量是否达到上限
+            if (this.size() < capacity) {
+                // 添加任务到任务列表
+                deque.addLast(element);
+                log.debug("进入阻塞队列 {}", element);
+                // 唤醒消费者、添加一个唤醒一个
+                emptyWaitSet.signal();
+            } else {
+                rejectStrategy.reject(this, element);
+            }
+        } finally {
+            lock.unlock();
+        }
+    }
 }
