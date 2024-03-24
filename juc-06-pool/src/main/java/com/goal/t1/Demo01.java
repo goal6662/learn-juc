@@ -1,11 +1,9 @@
 package com.goal.t1;
 
+import javafx.concurrent.Worker;
 import lombok.extern.slf4j.Slf4j;
 
-import java.util.AbstractList;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.Deque;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
@@ -21,6 +19,98 @@ public class Demo01 {
     }
 
 }
+
+
+class ThreadPool {
+
+    // 任务列表
+    // 每一个任务都是一个可执行线程方法
+    private BlockingQueue<Runnable> taskQueue;
+
+    // 线程集合
+    private final HashSet<Worker> workers = new HashSet<>();
+
+    /**
+     * 线程数目
+     */
+    private int coreSize;
+
+    /**
+     * 获取任务的时间
+     */
+    private long timeout;
+
+    /**
+     * 获取任务的时间单位
+     */
+    private TimeUnit timeUnit;
+
+    public void execute(Runnable task) {
+        // workers.size() 是读、workers.add(worker) 是写，需要保证其线程安全
+        synchronized (workers) {
+            if (workers.size() >= coreSize) {
+                // 加入阻塞队列
+                taskQueue.put(task);
+            } else {
+                // 任务数目没有超过 coreSize 时，直接交给 worker 执行
+                Worker worker = new Worker(task);
+                // 添加至工人列表
+                workers.add(worker);
+                worker.start();
+            }
+        }
+    }
+
+
+    /**
+     * 线程池构造方法
+     * @param coreSize 线程数目
+     * @param timeout 超时时间
+     * @param timeUnit 时间单位
+     * @param queueCapacity 任务列表容量
+     */
+    public ThreadPool(int coreSize, long timeout, TimeUnit timeUnit, int queueCapacity) {
+        this.coreSize = coreSize;
+        this.timeout = timeout;
+        this.timeUnit = timeUnit;
+        // 初始化任务列表
+        this.taskQueue = new BlockingQueue<>(queueCapacity);
+//        // 初始化线程
+//        this.workers = new HashSet<>(coreSize);
+    }
+
+    // 线程工人
+    class Worker extends Thread {
+        private Runnable task;
+
+        public Worker(Runnable task) {
+            this.task = task;
+        }
+
+        @Override
+        public void run() {
+            // 执行任务
+            // 1. task 不为空，执行任务
+            // 2. task 为空，从任务队列获取任务
+            while (task != null || (task = taskQueue.take()) != null) {
+                try {
+                    task.run();
+                } catch (Exception e) {
+                    System.out.println("任务执行异常" + task);
+                    e.printStackTrace();
+                } finally {
+                    task = null;
+                }
+            }
+            // 3. 没有任务需要执行
+            synchronized (workers) {
+                workers.remove(this);
+            }
+        }
+    }
+
+}
+
 
 /**
  * 阻塞队列
@@ -43,6 +133,10 @@ class BlockingQueue<T> {
 
     // 容量
     private int capacity;
+
+    public BlockingQueue(int capacity) {
+        this.capacity = capacity;
+    }
 
     // 带超时的阻塞获取
     public T poll(long timeout, TimeUnit unit) {
