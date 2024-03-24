@@ -15,6 +15,7 @@
         <module>juc-03-jmm</module>
         <module>juc-04-unlock</module>
         <module>juc-05-immutable</module>
+        <module>juc-06-pool</module>
     </modules>
 
     <properties>
